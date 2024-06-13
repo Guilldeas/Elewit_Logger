@@ -13,6 +13,7 @@
 //                                                                                                            //
 // TO DO:                                                                                                     //
 //   - Test higher frequency sampling with delayMicroseconds()                                                //
+//   - Send data with only the relevant digits for the precision of the inbuilt ADC                           //
 //                                                                                                            //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -87,16 +88,28 @@ void loop() {
     
     // Send readings through serial communication
     Serial.println("Print samples in pairs of [V], [ms]");
+
+    Serial.println("Sending captured data");
+    float timestamp = 0.0;
+    float voltage = 0.0; 
+    String CSV_pair;
     for (index=0; index<number_samples; index++){
 
-      Serial.print(index * int(Sampling_delay_ms)); // Plot the *aproximate* time when the value was recorded
-      Serial.print(",");
-      Serial.print( ADC_voltage_ref * float(ADC_values[index]) / 1023.0 ); // Convert counts to volts
-      Serial.println("");
+      // Convert time and voltage values to more readable units
+      timestamp = Sampling_delay_ms * (float)index; // Plot the *aproximate* time when the value was recorded
+      voltage = ADC_voltage_ref * ( float(ADC_values[index]) / 1023.0 ); // Convert counts to volts
+      
+      // Construct and send a string with CSV format to output through COMs
+      // CHECK: Decimal places have been set according to my assumptions of precision for the Arduino MEGA ADC and clock
+      // that is millisecond accuravy and millivolt accuracy (5V_REF / 1024 ~ 5mV)
+      CSV_pair = String(timestamp, 0) + "," + String(voltage, 3) + "\n";
+      Serial.print(CSV_pair);
 
     }
 
+    // When done sending tell python to stop listening and exit loop
     Program_finished = true;
+    Serial.println("Close Communication");
 
   }  
 
