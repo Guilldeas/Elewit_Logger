@@ -33,40 +33,105 @@ import matplotlib.pyplot as plt
 
 
 
-#------------------------------------ Prompt user to connect to Arduino ---------------------------------------#
+#------------------------------------------------ Functions ----------------------------------------------------#
+
+def read_float_from_serial():
+    while True:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').strip()
+            try:
+                value = float(line)
+                return value
+            except ValueError:
+                print("Received invalid float value")
+
+# Function to send a float value
+def send_float_through_serial(value):
+    value_str = f"{value}\n"
+    ser.write(value_str.encode('utf-8'))  # Send the float as a string followed by a newline
+
+
+
+#------------------------------- Prompt user to connect and confiugre Arduino ---------------------------------#
+print('')
+print('/////////////////////////////////////////////////////////////////////')
+print('//                                                                 //')
+print('//                  Serial Arduino Oscilloscope                    //')
+print('//                                                                 //')
+print('/////////////////////////////////////////////////////////////////////')
+print('\n')
 
 # List all ports available
 Ports = serial.tools.list_ports.comports()
 Ports_List = []
 
+print('Please connect to the Arduino Serial Port by choosing from the following list:')
 for port in Ports:
     Ports_List.append(str(port))
-    print(str(port))
+    print(f'  - {str(port)}')
 
 # Request user for port number
-port_num = input("Select Arduino MEGA Port: COM")
+port_num = input("Type the arduino Mga port and press enter: COM")
 COM = 'COM' + port_num
 
 # Open COM and wait up to 2 seconds for communication
 try:
     ser = serial.Serial(COM, baudrate=9600, timeout=2)
+    print("\nSuccesfuly connected to oscilloscope!")
 
 except Exception as e:
-    print(f"An error ocurred when attempting to connect to "+COM+": {e}")
+    print(f"\nAn error ocurred when attempting to connect to "+COM+": {e}")
+
+print('')
+print('/////////////////////////////////////////////////////////////////////')
+print('')
+
+# Read default configuration variables for measurement
+Trigger_threshold_V = read_float_from_serial()
+ADC_voltage_ref = read_float_from_serial()
+number_samples = int( read_float_from_serial() )
+Nyquist_frequency = read_float_from_serial()
+
+print('Please configure measurement. Default configuration variables are:\n')
+print(f'  - Trigger threshold = {Trigger_threshold_V}V\n')
+print(f"  - ADC voltage reference = {ADC_voltage_ref}\n")
+print(f"  - Number samples = {number_samples}\n")
+print(f"  - Maximum measurable frequency = {Nyquist_frequency}\n")
+
+
+# Ask user if they want to configure the oscilloscope measurement
+Reconfigure = input("Would you like to configure the measurement? [y] or [n]: ")
+if (Reconfigure == 'y' or Reconfigure == 'yes' or Reconfigure == '[y]' or Reconfigure == 'Y'):
+
+    # Signal Arduino to store the following values
+    Reconfigure = 'y'
+    ser.write(Reconfigure.encode('utf-8'))
+
+    send_float_through_serial( float( input("  - Enter trigger threshold in volts: ") ) )
+    send_float_through_serial( float( input("  - Enter ADC reference voltage in volts: ") ) ) 
+    send_float_through_serial( float( input("  - Enter number of samples: ") ) )
+    send_float_through_serial( float( input("  - Enter maximum frequency to measure in Hz: ") ) )
+
+else:
+    # Signal Arduino to measure with it's default values
+    Reconfigure = 'n'
+    ser.write(Reconfigure.encode('utf-8'))
+
+print('')
+print('/////////////////////////////////////////////////////////////////////')
+print('')
+
 
 
 
 #----------------------------------------------- Read data ----------------------------------------------------#
-
+print('Begin measurement')
 # Read data from arduino
 Captured_data = [[], []]
 Store_data = False
 while True:
 
     try:
-        # Request data from arduino
-        #ser.write(b's')
-
         # Wait until response or timeout
         wait = 0
         timeout = 10
@@ -121,6 +186,10 @@ if ser.is_open:
 
 
 #------------------------------------------ Graph and store data -----------------------------------------------#
+
+print('')
+print('/////////////////////////////////////////////////////////////////////')
+print('')
 
 # Graph data
 fig, ax = plt.subplots()
