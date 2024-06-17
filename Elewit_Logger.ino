@@ -12,8 +12,7 @@
 //                                                                                                            //
 //                                                                                                            //
 // TO DO:                                                                                                     //
-//   - Test higher frequency sampling with delayMicroseconds()                                                //
-//   - Send data with only the relevant digits for the precision of the inbuilt ADC                           //
+//   - Find if signaling when the reading is taking place is delaying the measurement noticibly               //
 //                                                                                                            //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -29,10 +28,12 @@ float Nyquist_frequency = 500; // In Hertz
 
 //----------------------------------- Define code variables --------------------------------------------------//
 int Trigger_threshold_counts = round(Trigger_threshold_V * 1023/ ADC_voltage_ref); // 1023 is the full scale count for the ADC reference
-unsigned long Sampling_delay_ms = 1000 / ( 2 * Nyquist_frequency ); // In microseconds
+unsigned long Sampling_delay_ms = 1000 / ( 2 * Nyquist_frequency ); // In milliseconds
+unsigned int Sampling_delay_us = 1000000 / ( 2 * Nyquist_frequency ); // In microseconds
 int ADC_pin = A0;
 bool Looking_for_trigger = true;
 bool Program_finished = false;
+bool Fast_sampling = true;
 int* ADC_values = nullptr;
 int index = 0;
 char Reconfigure = 'n';
@@ -40,7 +41,7 @@ char Reconfigure = 'n';
 float ReadFloatFromSerial();
 char ReadCharFromSerial();
 
-
+pinMode(53, OUTPUT); //////////////////////////////////////// TROUBLESHOOTING
 
 //---------------------------------- Setup + Configuration ---------------------------------------------------//
 void setup() {
@@ -51,13 +52,13 @@ void setup() {
     ; // Wait for serial port to connect. Needed for native USB
   }
 
+  ////////// Get configuration from user
+
   // Send Python the default values so that it can ask user if they want to reconfigure
   Serial.println(Trigger_threshold_V);
   Serial.println(ADC_voltage_ref);
   Serial.println(number_samples);
   Serial.println(Nyquist_frequency);
-
-  // Listen to user for measurement configuration
 
   // Receiving a 'y' signals Arduino to request new variables for the measurement
   // Anything else makes it so the measurement is performed with default variables.
@@ -70,13 +71,23 @@ void setup() {
 
     // Redo the calculation of measurement variables
     Trigger_threshold_counts = round(Trigger_threshold_V * 1023/ ADC_voltage_ref); // 1023 is the full scale count for the ADC reference
-    Sampling_delay_ms = 1000 / ( 2 * Nyquist_frequency ); // In microseconds
+    
+    // Higher frequencies call for shorter delays and we have to choose which function will be 
+    // better suited for each type of delay
+    if (Nyquist_frequency < 250.0){
+      Sampling_delay_ms = 1000 / ( 2 * Nyquist_frequency ); // In milliseconds
+      Fast_sampling = false;
+    }
+    else {
+      Sampling_delay_us = 1000000 / ( 2 * Nyquist_frequency ); // In microseconds
+      Fast_sampling = true;
+    }
   }
 
   // Create array dynamicaly
   ADC_values = new int[number_samples];
   
-  //Initialize it by fulling it with zeroes
+  //Initialize it by filling it with zeroes
   for (index=0; index<number_samples; index++){
 
     ADC_values[index] = 0;
@@ -99,52 +110,109 @@ void loop() {
       Looking_for_trigger = false;
 
       // Signal the user while reading is taking place
+      Serial.println("  - Found Trigger event, capturing data");
       digitalWrite(LED_BUILTIN, HIGH);
 
     }
 
   }
 
-  // Record data for just one trigger
-  if (not Program_finished){
+  
+  //--------------------------------------- Fast Sampling -----------------------------------------------------//
+  // The main code is effectively duplicated save for a couple of lines, delay() vs delayMicroseconds() this is 
+  // pretty unsightly but necessary, if we were to choose which of the 2 functions to use during measurement
+  // we may introduce an unknown delay between samples or right after trigger, thus it is safer to choose
+  // between them as early into the nesting as possible.
+  if (Fast_sampling){
 
-    // Read ADC values
-    Serial.println("  - Found Trigger event");
-    Serial.println("  - Read stored ADC values");
-    for (index=0; index<number_samples; index++){
+    // Record data for just one trigger
+    if (not Program_finished){
 
-      ADC_values[index] = analogRead( ADC_pin );
-      delay(Sampling_delay_ms);
+      // Read ADC values
+      digitalWrite(53, HIGH); ////////////////////////////////////////////////// TROUBLESHOOTING
+      for (index=0; index<number_samples; index++){
 
-    }
-    
-    // Signal finished reading
-    digitalWrite(LED_BUILTIN, LOW);
-    
-    // Send readings through serial communication
-    Serial.println("  - Sending captured data in pairs of [V], [ms]");
-    float timestamp = 0.0;
-    float voltage = 0.0; 
-    String CSV_pair;
-    for (index=0; index<number_samples; index++){
+        ADC_values[index] = analogRead( ADC_pin );
+        delayMicroseconds(Sampling_delay_us);
 
-      // Convert time and voltage values to more readable units
-      timestamp = Sampling_delay_ms * (float)index; // Plot the *aproximate* time when the value was recorded
-      voltage = ADC_voltage_ref * ( float(ADC_values[index]) / 1023.0 ); // Convert counts to volts
+      }
+      digitalWrite(53, LOW); ////////////////////////////////////////////////// TROUBLESHOOTING
       
-      // Construct and send a string with CSV format to output through COMs
-      // CHECK: Decimal places have been set according to my assumptions of precision for the Arduino MEGA ADC and clock
-      // that is millisecond accuravy and millivolt accuracy (5V_REF / 1024 ~ 5mV)
-      CSV_pair = String(timestamp, 0) + "," + String(voltage, 3) + "\n";
-      Serial.print(CSV_pair);
+      // Signal finished sampling
+      digitalWrite(LED_BUILTIN, LOW);
+      
+      // Send samplings through serial communication
+      Serial.println("  - Sending captured data in pairs of [V], [us]");
+      float timestamp = 0.0;
+      float voltage = 0.0; 
+      String CSV_pair;
+      for (index=0; index<number_samples; index++){
 
-    }
+        // Convert time and voltage values to more readable units
+        timestamp = Sampling_delay_us * (float)index; // Plot the *aproximate* time when the value was recorded
+        voltage = ADC_voltage_ref * ( float(ADC_values[index]) / 1023.0 ); // Convert counts to volts
+        
+        // Construct and send a string with CSV format to output through COMs
+        // CHECK: Decimal places have been set according to my assumptions of precision for the Arduino MEGA ADC and clock
+        // that is microsecond accuracy and millivolt accuracy (5V_REF / 1024 ~ 5mV)
+        CSV_pair = String(timestamp, 0) + "," + String(voltage, 3) + "\n";
+        Serial.print(CSV_pair);
 
-    // When done sending tell python to stop listening and exit loop
-    Program_finished = true;
-    Serial.println("  - Close Communication");
+      }
 
-  }  
+      // When done sending tell python to stop listening and exit loop
+      Program_finished = true;
+      Serial.println("  - Close Communication");
+
+    }  
+
+  }
+
+
+  //--------------------------------------- Slow Sampling -----------------------------------------------------//
+  else {
+
+    // Record data for just one trigger
+    if (not Program_finished){
+
+      // Read ADC values
+      Serial.println("  - Found Trigger event, capturing data");
+      for (index=0; index<number_samples; index++){
+
+        ADC_values[index] = analogRead( ADC_pin );
+        delay(Sampling_delay_ms);
+
+      }
+      
+      // Signal finished sampling
+      digitalWrite(LED_BUILTIN, LOW);
+      
+      // Send samplings through serial communication
+      Serial.println("  - Sending captured data in pairs of [V], [ms]");
+      float timestamp = 0.0;
+      float voltage = 0.0; 
+      String CSV_pair;
+      for (index=0; index<number_samples; index++){
+
+        // Convert time and voltage values to more readable units
+        timestamp = Sampling_delay_ms * (float)index; // Plot the *aproximate* time when the value was recorded
+        voltage = ADC_voltage_ref * ( float(ADC_values[index]) / 1023.0 ); // Convert counts to volts
+        
+        // Construct and send a string with CSV format to output through COMs
+        // CHECK: Decimal places have been set according to my assumptions of precision for the Arduino MEGA ADC and clock
+        // that is millisecond accuravy and millivolt accuracy (5V_REF / 1024 ~ 5mV)
+        CSV_pair = String(timestamp, 0) + "," + String(voltage, 3) + "\n";
+        Serial.print(CSV_pair);
+
+      }
+
+      // When done sending tell python to stop listening and exit loop
+      Program_finished = true;
+      Serial.println("  - Close Communication");
+
+    }  
+
+  }
 
 }
 

@@ -71,7 +71,7 @@ for port in Ports:
     print(f'  - {str(port)}')
 
 # Request user for port number
-port_num = input("Type the arduino Mga port and press enter: COM")
+port_num = input("Type the arduino Mega port and press enter: COM")
 COM = 'COM' + port_num
 
 # Open COM and wait up to 2 seconds for communication
@@ -81,6 +81,7 @@ try:
 
 except Exception as e:
     print(f"\nAn error ocurred when attempting to connect to "+COM+": {e}")
+    print("Troubleshoting: Close other programs trying to talk to the Arduino like Arduino IDE")
 
 print('')
 print('/////////////////////////////////////////////////////////////////////')
@@ -92,15 +93,15 @@ ADC_voltage_ref = read_float_from_serial()
 number_samples = int( read_float_from_serial() )
 Nyquist_frequency = read_float_from_serial()
 
-print('Please configure measurement. Default configuration variables are:\n')
-print(f'  - Trigger threshold = {Trigger_threshold_V}V\n')
-print(f"  - ADC voltage reference = {ADC_voltage_ref}\n")
-print(f"  - Number samples = {number_samples}\n")
-print(f"  - Maximum measurable frequency = {Nyquist_frequency}\n")
+print('Please configure measurement. Default configuration variables are:')
+print(f'  - Trigger threshold = {Trigger_threshold_V}V')
+print(f"  - ADC voltage reference = {ADC_voltage_ref}")
+print(f"  - Number samples = {number_samples}")
+print(f"  - Maximum measurable frequency = {Nyquist_frequency}")
 
 
 # Ask user if they want to configure the oscilloscope measurement
-Reconfigure = input("Would you like to configure the measurement? [y] or [n]: ")
+Reconfigure = input("\nWould you like to configure the measurement? [y] or [n]: ")
 if (Reconfigure == 'y' or Reconfigure == 'yes' or Reconfigure == '[y]' or Reconfigure == 'Y'):
 
     # Signal Arduino to store the following values
@@ -191,17 +192,6 @@ print('')
 print('/////////////////////////////////////////////////////////////////////')
 print('')
 
-# Graph data
-fig, ax = plt.subplots()
-plt.plot(Captured_data[0], Captured_data[1], color='k')#, label="")
-plt.xticks(Captured_data[0])
-plt.xlabel('Time [ms]')
-plt.ylabel('Voltage [V]')
-plt.legend()
-plt.show()
-
-
-
 # Export data to CSV
 Export_Data = input('Export data to CSV? [y] or [n]: ')
 if(Export_Data == 'y' or Export_Data == 'Y' or Export_Data == 'yes'):
@@ -230,3 +220,19 @@ if(Export_Data == 'y' or Export_Data == 'Y' or Export_Data == 'yes'):
         writer.writerows(Captured_data)
 
     print(f"Data successfully written to {file_path}")
+
+
+# Graph data
+fig, ax = plt.subplots()
+plt.scatter(x=Captured_data[0], y=Captured_data[1], marker='.', color='k')#, label="")
+plt.xticks(Captured_data[0])
+plt.ylabel('Voltage [V]')
+
+# Arduino returns data in different units appropiate to fast or slow readings
+if (Nyquist_frequency  < 250.0):
+    plt.xlabel('Time [ms]')
+else:
+    plt.xlabel('Time [us]')
+
+#plt.legend()
+plt.show()
